@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Left device pillar -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,42C30,38.69 32.69,36 36,36L41,36C44.31,36 47,38.69 47,42L47,66C47,69.31 44.31,72 41,72L36,72C32.69,72 30,69.31 30,66Z" />
+    <!-- Right device pillar -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M61,42C61,38.69 63.69,36 67,36L72,36C75.31,36 78,38.69 78,42L78,66C78,69.31 75.31,72 72,72L67,72C63.69,72 61,69.31 61,66Z" />
+    <!-- Encrypted one-way bridge arc -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M38.5,35C44.5,27 63.5,27 69.5,35"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="4.5" />
+    <!-- Directional chevron arrow on right node -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M50,51.5L55.5,54L50,56.5Z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,54L58,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.2" />
+</vector>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhoneBridge</string>
+    <string name="notification_listener_service_name">PhoneBridge Capture</string>
+    <string name="notification_listener_description">Captures selected notifications on your Primary device and encrypts them before queuing for your paired Secondary device.</string>
+    <string name="channel_bridge_events_name">Bridged Notifications</string>
+    <string name="channel_bridge_events_desc">Encrypted notifications delivered from your paired Primary device.</string>
+    <string name="channel_bridge_sync_name">Bridge Sync Status</string>
+    <string name="channel_bridge_sync_desc">Transient status notifications during active delivery sync.</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "PhoneBridge",
+  "description": "Private, end-to-end encrypted one-way Android notification and calendar bridge with durable outbox/inbox delivery, WebSocket push, and HTTPS sync recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,16 @@
+{$RELAY_DOMAIN:relay.phonebridge.example} {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        -Server
+    }
+
+    reverse_proxy relay:8443 {
+        flush_interval -1
+    }
+}

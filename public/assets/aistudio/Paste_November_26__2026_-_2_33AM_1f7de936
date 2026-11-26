@@ -1,0 +1,1233 @@
+PHONEBRIDGE — ROBUST COMMUNICATION & DELIVERY ENGINE
+
+ROLE
+
+Act as a senior distributed systems engineer, Android engineer, security engineer, backend architect, and reliability engineer.
+
+Design and implement the complete production-minded communication and event-delivery infrastructure for PhoneBridge, a private, one-way Android notification bridge between two personally owned Android devices.
+
+The Primary device (Tecno) captures selected events and sends them to the Secondary device (Samsung).
+
+The Secondary receives, securely stores, acknowledges, and presents those events.
+
+This assignment focuses specifically on the communication, synchronization, reliability, security, persistence, and recovery layer.
+
+Do not build a superficial networking demo.
+
+Build a real, maintainable, testable system designed for unreliable mobile networks, Android background restrictions, device restarts, temporary server outages, duplicate delivery, and offline devices.
+
+---
+
+1. SYSTEM OBJECTIVE
+
+Implement a robust one-way event-delivery infrastructure that guarantees the best achievable delivery reliability under Android and network constraints.
+
+The system must prioritize:
+
+1. Durable event persistence.
+2. Reliable delivery.
+3. End-to-end encryption.
+4. Deduplication.
+5. Offline recovery.
+6. Reconnection.
+7. Synchronization.
+8. Event integrity.
+9. Device authentication.
+10. Battery efficiency.
+11. Privacy.
+12. Observability without sensitive logging.
+
+The system must not depend on both phones being connected to the same Wi-Fi network.
+
+It must support phones operating across different mobile networks and internet connections.
+
+The Primary must never be remotely controlled by the Secondary.
+
+The Secondary may send transport acknowledgements, synchronization requests, and protocol-level messages necessary for delivery, but no operational commands controlling the Primary.
+
+---
+
+2. ARCHITECTURE
+
+Implement the following architecture:
+
+PRIMARY ANDROID DEVICE
+
+- Kotlin.
+- Room.
+- Transactional outbox.
+- WorkManager.
+- WebSocket client.
+- HTTPS client.
+- Device identity.
+- End-to-end encryption.
+- Event serialization.
+- Retry engine.
+- Connectivity monitoring.
+
+RELAY SERVER
+
+- HTTPS API.
+- WebSocket endpoint.
+- Device authentication.
+- Pairing infrastructure.
+- Durable event storage.
+- Routing.
+- Delivery receipts.
+- Expiration.
+- Synchronization.
+- Rate limiting.
+- Minimal metadata.
+- Encrypted payload storage.
+
+SECONDARY ANDROID DEVICE
+
+- Kotlin.
+- Room.
+- Transactional inbox.
+- WebSocket client.
+- HTTPS synchronization client.
+- Device authentication.
+- End-to-end decryption.
+- Deduplication.
+- Acknowledgement handling.
+- Calendar integration.
+- Notification presentation integration.
+
+The server must be incapable of decrypting event contents.
+
+---
+
+3. TECHNOLOGY STACK
+
+Use:
+
+Android
+
+- Kotlin.
+- Jetpack Compose.
+- Room.
+- Kotlin Coroutines.
+- Flow.
+- WorkManager.
+- OkHttp.
+- WebSocket over TLS.
+- Retrofit or a suitable HTTPS client.
+- kotlinx.serialization.
+- Android Keystore.
+- Jetpack Security where appropriate.
+- Android network monitoring APIs.
+
+Backend
+
+Choose a maintainable backend stack.
+
+Preferred:
+
+- Kotlin.
+- Ktor.
+- PostgreSQL.
+- WebSocket.
+- REST APIs.
+- Database-backed event queue.
+
+Go or another appropriate stack may be used if there is a strong engineering justification, but the architecture must remain documented and maintainable.
+
+Do not introduce Kafka, RabbitMQ, Redis, Kubernetes, or other complex infrastructure unnecessarily for an initial two-device application.
+
+PostgreSQL should be sufficient for the initial durable relay.
+
+Use migrations, not destructive database initialization.
+
+---
+
+4. EVENT DELIVERY MODEL
+
+Implement an at-least-once delivery system with idempotent processing.
+
+Do not promise mathematically perfect exactly-once delivery.
+
+Achieve effectively-once event presentation by implementing deduplication at the Primary, Relay, and Secondary layers.
+
+Every event must have a unique immutable identifier.
+
+Use a cryptographically secure UUID or another appropriate globally unique identifier.
+
+Every event must have a sequence number assigned by the Primary.
+
+Event identifiers and sequence numbers must be preserved throughout the delivery pipeline.
+
+---
+
+5. PRIMARY TRANSACTIONAL OUTBOX
+
+Implement a durable transactional outbox on the Primary.
+
+Every captured event must be written to Room before attempting network transmission.
+
+The event capture process must not depend on network availability.
+
+Implement an event outbox table with fields such as:
+
+- event_id
+- sequence_number
+- event_type
+- encrypted_payload
+- created_at
+- expires_at
+- state
+- retry_count
+- next_attempt_at
+- last_attempt_at
+- server_accepted_at
+- error_code
+- error_summary
+
+The schema may be adjusted to improve correctness.
+
+Requirements:
+
+- Persist events before sending.
+- Preserve event IDs across retries.
+- Never create a new ID for a retry.
+- Never lose queued events during app restarts.
+- Recover after process termination.
+- Recover after device reboot.
+- Handle concurrent workers safely.
+- Prevent concurrent duplicate sends.
+- Handle database transactions correctly.
+- Support queue prioritization.
+- Support expiration.
+- Support permanent failure states.
+- Support temporary failure states.
+- Avoid excessive database locking.
+- Avoid excessive memory usage.
+
+Implement a transactional event insertion mechanism.
+
+If an event cannot be persisted, report the failure locally and do not pretend it was delivered.
+
+---
+
+6. DELIVERY STATE MACHINE
+
+Implement a clear, documented state machine.
+
+Suggested states:
+
+- CAPTURED
+- PENDING
+- SENDING
+- RETRY_WAIT
+- SERVER_ACCEPTED
+- DEVICE_RECEIVED
+- READ
+- EXPIRED
+- PERMANENT_FAILURE
+
+Use appropriate state transitions and prevent invalid transitions.
+
+State changes must be persisted.
+
+The system must distinguish:
+
+SERVER_ACCEPTED:
+The relay durably stored the encrypted event.
+
+DEVICE_RECEIVED:
+The Secondary successfully persisted the event locally.
+
+READ:
+The event was opened or marked read on the Secondary.
+
+EXPIRED:
+The event exceeded its retention deadline.
+
+PERMANENT_FAILURE:
+The event cannot be delivered without intervention.
+
+Never treat server acceptance as proof of recipient delivery.
+
+---
+
+7. UNIQUE IDENTIFIERS AND DEDUPLICATION
+
+Implement deduplication across the entire system.
+
+Primary
+
+- Generate immutable event IDs.
+- Assign monotonically increasing sequence numbers.
+- Prevent duplicate event creation from notification updates.
+- Deduplicate source events where possible.
+- Preserve event identity across retries.
+
+Relay
+
+- Enforce unique event IDs within the relevant device relationship.
+- Reject duplicate submissions or return the original acceptance status.
+- Prevent duplicate message creation.
+- Maintain delivery state.
+- Maintain authenticated receipts.
+
+Secondary
+
+- Enforce a database uniqueness constraint on event IDs.
+- Process duplicate deliveries idempotently.
+- Acknowledge previously persisted events.
+- Never create duplicate calendar or inbox entries.
+- Deduplicate synchronization responses.
+
+Use transactional processing on the Secondary.
+
+The event must be persisted before acknowledgement.
+
+---
+
+8. RELAY SERVER
+
+Implement a minimal, secure, durable relay.
+
+The relay must support:
+
+- Device authentication.
+- Device pairing state.
+- Device revocation.
+- Event submission.
+- Event persistence.
+- Event routing.
+- Pending event retrieval.
+- WebSocket delivery.
+- HTTPS fallback.
+- Delivery receipts.
+- Synchronization.
+- Event expiration.
+- Rate limiting.
+- Connection management.
+- Protocol versioning.
+- Server health endpoints.
+- Database migrations.
+- Graceful shutdown.
+
+The relay must never decrypt notification content.
+
+The relay should only process the minimum metadata necessary for delivery and routing.
+
+Do not log encrypted payloads unnecessarily.
+
+Do not log sensitive event identifiers, pairing codes, tokens, phone numbers, message contents, or secrets.
+
+---
+
+9. DURABLE RELAY STORAGE
+
+Use PostgreSQL for durable message storage.
+
+Implement an appropriate schema for:
+
+- Devices.
+- Device relationships.
+- Device credentials.
+- Pairing sessions.
+- Encrypted events.
+- Delivery receipts.
+- Synchronization cursors.
+- Revocation records.
+- Protocol metadata.
+
+Example event fields:
+
+- event_id
+- relationship_id
+- destination_device_id
+- source_device_id
+- sequence_number
+- encrypted_payload
+- ciphertext_hash
+- created_at
+- expires_at
+- accepted_at
+- recipient_received_at
+- status
+
+Use indexes for efficient pending-event retrieval and expiration.
+
+Use database constraints to prevent duplicate events.
+
+Implement safe transactions.
+
+Implement migration support.
+
+Implement an expiration process that deletes expired event payloads.
+
+Do not store plaintext notification content.
+
+Do not store plaintext private calendar content.
+
+---
+
+10. HTTPS TRANSPORT
+
+Implement a secure HTTPS transport.
+
+Requirements:
+
+- TLS.
+- Strict certificate validation.
+- Secure authentication.
+- Request validation.
+- Response validation.
+- Timeouts.
+- Retry handling.
+- Rate limiting.
+- Payload limits.
+- Protocol versioning.
+- Connection error handling.
+- Safe serialization.
+- Secure headers where appropriate.
+
+Never disable certificate validation.
+
+Never accept arbitrary certificates.
+
+Never use plaintext HTTP in production.
+
+Do not put sensitive content in query parameters.
+
+Do not embed long-lived secrets in URLs.
+
+Do not expose credentials in logs.
+
+Use authenticated device credentials.
+
+Implement credential revocation.
+
+---
+
+11. WEBSOCKET REALTIME DELIVERY
+
+Implement WebSocket over TLS.
+
+The WebSocket must be authenticated.
+
+The server must only route events to authorized paired devices.
+
+Implement:
+
+- Connection lifecycle management.
+- Heartbeats.
+- Ping/pong.
+- Authentication.
+- Reconnection.
+- Backoff.
+- Jitter.
+- Duplicate protection.
+- Event acknowledgements.
+- Connection state monitoring.
+- Network transition handling.
+- Authentication renewal where appropriate.
+- Server connection limits.
+- Graceful disconnect.
+- Reconnect after process restart.
+
+Do not assume the WebSocket remains permanently connected.
+
+Do not use WebSocket as the sole delivery mechanism.
+
+The WebSocket is the realtime delivery path, not the durable delivery guarantee.
+
+---
+
+12. HTTPS SYNCHRONIZATION FALLBACK
+
+Implement HTTPS-based synchronization.
+
+The Secondary must be able to recover events when:
+
+- The WebSocket disconnects.
+- The Secondary was offline.
+- The Secondary application was stopped.
+- The Secondary was restarted.
+- The device rebooted.
+- A WebSocket event was missed.
+- The network changed.
+- The relay was temporarily unavailable.
+
+The Secondary must be able to request pending events using a secure synchronization cursor.
+
+The relay must return a bounded batch of pending events.
+
+Implement:
+
+- Cursor-based synchronization.
+- Pagination.
+- Event sequence information.
+- Batch size limits.
+- Deduplication.
+- Durable acknowledgements.
+- Recovery of incomplete synchronization.
+- Expired-event handling.
+- Gap detection.
+- Synchronization retry.
+
+The sync process must be idempotent.
+
+Repeated synchronization requests must not create duplicates.
+
+---
+
+13. SYNCHRONIZATION CURSOR
+
+Implement a robust cursor system.
+
+The Secondary should maintain its last successfully processed synchronization position.
+
+The cursor must not advance beyond events that have not been durably processed.
+
+The system must handle:
+
+- Out-of-order events.
+- Missing sequence numbers.
+- Duplicate events.
+- Pagination.
+- Interrupted sync.
+- Relay restart.
+- Secondary restart.
+- Event expiration.
+- Concurrent incoming WebSocket events.
+
+Define precisely how cursors work and how they are recovered.
+
+Do not assume a single global cursor is sufficient unless the protocol guarantees that it is.
+
+Use an appropriate per-device or per-relationship synchronization model.
+
+---
+
+14. DELIVERY ACKNOWLEDGEMENTS
+
+Implement explicit delivery acknowledgements.
+
+The Secondary should acknowledge an event only after:
+
+1. Authentication.
+2. Envelope validation.
+3. Decryption.
+4. Payload validation.
+5. Deduplication.
+6. Successful local persistence.
+
+The acknowledgement should be authenticated.
+
+The acknowledgement must not expose event content.
+
+Implement receipt tracking on the relay.
+
+The relay should retain sufficient delivery state to recover if acknowledgement transmission fails.
+
+If the Secondary receives a duplicate, it should acknowledge the previously persisted event without inserting another record.
+
+If an event fails decryption or validation, do not falsely acknowledge it as successfully received.
+
+Implement appropriate quarantine or failure handling.
+
+---
+
+15. RETRY ENGINE
+
+Implement intelligent retry handling.
+
+Use exponential backoff with jitter.
+
+Use configurable maximum retry intervals.
+
+Suggested progression:
+
+- 2 seconds.
+- 5 seconds.
+- 15 seconds.
+- 30 seconds.
+- 60 seconds.
+- 2 minutes.
+- 5 minutes.
+- Up to 15 minutes.
+
+The actual schedule should be adaptive and respect Android scheduling constraints.
+
+Implement:
+
+- Random jitter.
+- Connectivity-aware retry.
+- Retry-after support.
+- Retry classification.
+- Retry caps.
+- Event expiration.
+- Permanent failure handling.
+- Retry metrics.
+- Queue prioritization.
+
+Do not implement a tight retry loop.
+
+Do not continuously wake the phone to retry.
+
+Do not use excessive wake locks.
+
+Do not schedule unnecessary background tasks.
+
+---
+
+16. ERROR CLASSIFICATION
+
+Implement a centralized error classification system.
+
+Temporary failures:
+
+- Network unavailable.
+- Connection timeout.
+- WebSocket disconnect.
+- Server unavailable.
+- HTTP 5xx.
+- Rate limit.
+- Temporary database failure.
+- Temporary authentication renewal failure.
+
+Permanent failures:
+
+- Invalid event.
+- Unsupported protocol.
+- Invalid destination.
+- Revoked pairing.
+- Expired event.
+- Invalid payload.
+- Unauthorized device.
+- Incompatible cryptographic relationship.
+
+Handle authentication errors carefully.
+
+Do not blindly retry permanent errors.
+
+Implement appropriate diagnostic messages.
+
+---
+
+17. OFFLINE OPERATION
+
+The Primary must continue capturing events when the internet is unavailable.
+
+Events must remain in the durable outbox.
+
+The Secondary must continue functioning offline.
+
+Received events must remain accessible locally.
+
+Calendar events and reminders must remain usable without connectivity.
+
+When connectivity returns:
+
+- Resume delivery.
+- Synchronize.
+- Reconcile event states.
+- Detect duplicates.
+- Detect sequence gaps.
+- Recover pending events.
+- Update delivery status.
+
+Do not delete queued events solely because the network is temporarily unavailable.
+
+---
+
+18. ANDROID BACKGROUND EXECUTION
+
+Design for real Android devices.
+
+Use WorkManager for durable scheduled recovery and retry tasks where appropriate.
+
+Use WebSocket only while a reasonable connection lifecycle permits it.
+
+Respect:
+
+- Doze mode.
+- App standby.
+- Background execution restrictions.
+- Battery optimization.
+- Android 13 notification permission.
+- Foreground service restrictions.
+- Device reboot.
+- Network changes.
+- App force-stop behavior.
+
+Do not promise guaranteed continuous delivery if Android has restricted the application.
+
+Implement user-guided troubleshooting for battery restrictions on Samsung and Tecno devices.
+
+Avoid polling.
+
+Prefer event-driven networking.
+
+Use bounded network retries.
+
+Use foreground services only when genuinely necessary and compliant with Android requirements.
+
+Do not use hidden APIs or platform bypasses.
+
+---
+
+19. END-TO-END ENCRYPTION
+
+Implement end-to-end encryption.
+
+The relay must never have access to plaintext event payloads.
+
+Use established cryptographic protocols and reviewed libraries.
+
+Do not invent cryptographic primitives.
+
+Implement:
+
+- Device identity keys.
+- Secure authenticated pairing.
+- Key establishment.
+- Key confirmation.
+- AEAD encryption.
+- Nonce management.
+- Replay protection.
+- Message authentication.
+- Key rotation.
+- Revocation.
+- Protocol versioning.
+- Secure local key storage.
+- Secure recovery handling.
+
+The six-digit pairing code must not be used directly as an encryption key.
+
+Use an appropriate PAKE or reviewed pairing protocol.
+
+Ensure the protocol resists:
+
+- Offline brute-force attacks.
+- Replay attacks.
+- Unauthorized device pairing.
+- Man-in-the-middle attacks.
+- Device impersonation.
+- Unauthorized message injection.
+
+Use Android Keystore to protect device secrets.
+
+Document the cryptographic threat model.
+
+---
+
+20. EVENT ENVELOPE
+
+Implement a versioned message envelope.
+
+Example conceptual structure:
+
+{
+"protocol_version": 1,
+"event_id": "uuid",
+"relationship_id": "opaque-identifier",
+"sequence_number": 1842,
+"created_at": "timestamp",
+"expires_at": "timestamp",
+"payload_type": "notification",
+"ciphertext": "encrypted-payload",
+"nonce": "nonce",
+"authentication_tag": "tag"
+}
+
+Adjust the design to the selected encryption protocol.
+
+Sensitive content must not be exposed in the envelope.
+
+Use authenticated encryption.
+
+Ensure associated data binds relevant routing, identity, sequence, and protocol fields to the encrypted payload as appropriate.
+
+Never encrypt using a reused nonce with the same key.
+
+Implement safe nonce generation and management according to the selected cryptographic library.
+
+---
+
+21. PRIVACY AND RETENTION
+
+Implement configurable event expiration.
+
+The Primary queue and Secondary inbox must have independent retention policies.
+
+Relay payloads should expire automatically.
+
+The relay must not retain notification contents indefinitely.
+
+Implement:
+
+- Event expiration.
+- Queue expiration.
+- Relay expiration.
+- Secure deletion where reasonably achievable.
+- Pairing revocation.
+- Credential revocation.
+- Data deletion.
+- Minimal server metadata.
+- Minimal logs.
+- Privacy-preserving diagnostics.
+
+Do not store unnecessary sensitive metadata.
+
+Document limitations of secure deletion in SSDs, databases, backups, and cloud infrastructure.
+
+---
+
+22. SECURITY
+
+Implement:
+
+- Device authentication.
+- Device authorization.
+- Secure pairing.
+- TLS.
+- End-to-end encryption.
+- Secure storage.
+- Rate limiting.
+- Pairing attempt limits.
+- Replay protection.
+- Revocation.
+- Input validation.
+- Payload size limits.
+- Authentication expiry.
+- Credential rotation.
+- Database constraints.
+- Secure error handling.
+- Secret redaction.
+- Secure configuration.
+- Dependency auditing.
+
+Never:
+
+- Store plaintext notification payloads on the relay.
+- Log private message content.
+- Expose credentials in logs.
+- Disable TLS validation.
+- Use plaintext HTTP.
+- Use insecure cryptography.
+- Hardcode production secrets.
+- Accept unverified device identities.
+- Treat six-digit codes as cryptographic keys.
+- Use a single shared server secret for all users.
+- Allow unauthorized devices to retrieve events.
+
+---
+
+23. RELAY API
+
+Design a minimal versioned API.
+
+Possible endpoints:
+
+POST /v1/pairing/initiate
+
+POST /v1/pairing/complete
+
+POST /v1/events
+
+GET /v1/events/pending
+
+POST /v1/events/acknowledge
+
+POST /v1/sync
+
+POST /v1/devices/revoke
+
+GET /v1/devices/status
+
+GET /v1/health
+
+These are conceptual endpoints.
+
+Adjust the API to the architecture and security protocol.
+
+Document:
+
+- Authentication.
+- Authorization.
+- Request schemas.
+- Response schemas.
+- Error codes.
+- Rate limits.
+- Expiration.
+- Pagination.
+- Synchronization semantics.
+- Acknowledgement semantics.
+- Revocation.
+- Protocol versioning.
+
+Do not create unnecessary endpoints.
+
+---
+
+24. DATABASE DESIGN
+
+Implement migrations for PostgreSQL.
+
+Provide appropriate tables and indexes.
+
+Potential tables:
+
+- devices
+- device_relationships
+- pairing_sessions
+- encrypted_events
+- delivery_receipts
+- device_revocations
+- sync_metadata
+
+Use:
+
+- Unique constraints.
+- Foreign keys.
+- Transactions.
+- Indexes.
+- Safe migrations.
+- Appropriate retention cleanup.
+
+Avoid plaintext sensitive data.
+
+Implement efficient pending-event queries.
+
+Ensure the relay can safely handle concurrent event submissions and acknowledgements.
+
+---
+
+25. MONITORING AND DIAGNOSTICS
+
+Implement privacy-preserving diagnostics.
+
+The application should expose:
+
+- Connection status.
+- Last successful connection.
+- Last successful sync.
+- Last successful delivery.
+- Pending queue count.
+- Retry count.
+- Unacknowledged count.
+- Relay status.
+- Pairing status.
+- Permission status.
+- Network status.
+- WebSocket status.
+- Protocol version.
+- Encryption status.
+
+Do not expose private message contents.
+
+Do not log secrets.
+
+Implement structured logs.
+
+Use appropriate error identifiers.
+
+Provide diagnostics useful for debugging real Samsung and Tecno devices.
+
+The relay should support:
+
+- Health checks.
+- Database health.
+- Connection health.
+- Error metrics.
+- Queue metrics.
+- Expiration metrics.
+- Rate-limit metrics.
+
+Avoid logging sensitive metadata unnecessarily.
+
+---
+
+26. TESTING
+
+Implement unit, integration, and security tests.
+
+Unit tests
+
+- Event ID generation.
+- Sequence number assignment.
+- Event serialization.
+- Envelope validation.
+- Deduplication.
+- State transitions.
+- Retry scheduling.
+- Error classification.
+- Expiration.
+- Cursor advancement.
+- Gap detection.
+- Queue processing.
+- Acknowledgement handling.
+
+Integration tests
+
+- Event submission.
+- Durable persistence.
+- WebSocket delivery.
+- HTTPS synchronization.
+- Offline recovery.
+- Relay restart.
+- Device restart.
+- Database restart.
+- Duplicate submission.
+- Duplicate acknowledgement.
+- Out-of-order delivery.
+- Interrupted synchronization.
+- Pagination.
+- Event expiration.
+- Revocation.
+- Reconnection.
+
+Security tests
+
+- Unauthorized device.
+- Replay.
+- Invalid credentials.
+- Revoked device.
+- Invalid ciphertext.
+- Invalid authentication tag.
+- Pairing brute-force protection.
+- TLS validation.
+- Relay cannot decrypt payload.
+- Nonce safety.
+- Key revocation.
+- Credential expiry.
+
+Fault-injection tests
+
+Simulate:
+
+- Network loss during submission.
+- Network loss after relay persistence.
+- Lost acknowledgement.
+- Secondary offline.
+- Primary offline.
+- WebSocket disconnect.
+- Server restart.
+- Database restart.
+- Android process termination.
+- Reboot.
+- Duplicate event.
+- Out-of-order event.
+- Delayed event.
+- Expired event.
+- Corrupt payload.
+
+The system must recover without creating duplicate entries or falsely reporting successful delivery.
+
+---
+
+27. DEPLOYMENT
+
+Deliver:
+
+- Backend source.
+- Android client implementation.
+- Database migrations.
+- Docker configuration where appropriate.
+- Deployment instructions.
+- Environment configuration.
+- Secrets management instructions.
+- TLS deployment instructions.
+- Relay configuration.
+- API documentation.
+- Protocol documentation.
+- Security documentation.
+- Monitoring instructions.
+- Backup instructions.
+- Recovery instructions.
+- Testing instructions.
+
+Do not hardcode server credentials.
+
+Provide development, staging, and production configurations.
+
+Do not deploy with insecure development keys.
+
+---
+
+28. IMPLEMENTATION STRATEGY
+
+Implement in the following order:
+
+Stage 1: Protocol design
+
+Define:
+
+- Device identity.
+- Pairing.
+- Message envelope.
+- Encryption.
+- Sequence numbers.
+- Event IDs.
+- Acknowledgements.
+- Synchronization cursors.
+- Delivery state machine.
+- Revocation.
+
+Document the protocol before implementing the transport.
+
+Stage 2: Local durable queues
+
+Implement:
+
+- Primary transactional outbox.
+- Secondary transactional inbox.
+- Deduplication.
+- State transitions.
+- Queue persistence.
+
+Test offline operation before networking.
+
+Stage 3: Relay backend
+
+Implement:
+
+- Database.
+- Device authentication.
+- Event submission.
+- Durable persistence.
+- Pending event retrieval.
+- Acknowledgements.
+- Expiration.
+
+Stage 4: HTTPS transport
+
+Implement:
+
+- Authentication.
+- Submission.
+- Synchronization.
+- Receipts.
+- Retry.
+- Offline recovery.
+
+Stage 5: WebSocket
+
+Implement:
+
+- Connection.
+- Authentication.
+- Heartbeats.
+- Push.
+- Acknowledgements.
+- Reconnect.
+- Synchronization fallback.
+
+Stage 6: Security hardening
+
+Implement:
+
+- Cryptographic pairing.
+- End-to-end encryption.
+- Revocation.
+- Replay protection.
+- Credential rotation.
+- Security testing.
+
+Stage 7: Android resilience
+
+Implement:
+
+- WorkManager recovery.
+- Connectivity monitoring.
+- Reboot handling.
+- Background execution handling.
+- Battery diagnostics.
+
+Stage 8: Integration
+
+Integrate the communication engine with:
+
+- Primary notification capture.
+- Secondary calendar.
+- Inbox.
+- Realtime notification settings.
+
+---
+
+29. ENGINEERING RULES
+
+- Do not fake functionality.
+- Do not leave core features as TODOs.
+- Do not implement insecure placeholders.
+- Do not invent cryptographic algorithms.
+- Do not claim guaranteed delivery without acknowledging Android and network limitations.
+- Do not discard events merely because a network request failed.
+- Do not acknowledge events before durable local persistence.
+- Do not rely solely on WebSocket.
+- Do not rely solely on WorkManager.
+- Do not depend exclusively on the same Wi-Fi network.
+- Do not assume devices are always online.
+- Do not assume events arrive in order.
+- Do not assume events arrive only once.
+- Do not assume Android will keep an application running continuously.
+- Do not use excessive battery.
+- Do not expose plaintext payloads to the relay.
+- Do not log private notification contents.
+- Do not compromise security for convenience.
+
+Prioritize correctness, maintainability, security, and reliability.
+
+---
+
+30. DELIVERABLES
+
+Deliver the complete implementation.
+
+Include:
+
+1. Architecture documentation.
+2. Protocol specification.
+3. Android communication module.
+4. Primary outbox.
+5. Secondary inbox.
+6. Relay backend.
+7. PostgreSQL schema.
+8. Database migrations.
+9. HTTPS API.
+10. WebSocket infrastructure.
+11. Encryption implementation.
+12. Pairing implementation.
+13. Device authentication.
+14. Synchronization.
+15. Acknowledgements.
+16. Retry engine.
+17. Offline recovery.
+18. Deduplication.
+19. Revocation.
+20. Event expiration.
+21. Tests.
+22. Deployment configuration.
+23. README.
+24. Troubleshooting guide.
+25. Security threat model.
+
+Build and verify the implementation.
+
+Provide real source code, not just a conceptual architecture.
+
+The communication layer must be suitable for integration into the PhoneBridge Android application.
+
+FINAL OBJECTIVE
+
+Build a robust, secure, privacy-preserving, one-way event-delivery engine that connects a Tecno Primary to a Samsung Secondary.
+
+The Primary captures and durably queues events.
+
+The relay stores and routes encrypted events.
+
+The Secondary receives, validates, decrypts, persists, and acknowledges events.
+
+The system recovers from offline periods, network failures, device restarts, server restarts, duplicate deliveries, interrupted synchronization, and temporary outages.
+
+The relay must not be able to read notification contents.
+
+Delivery must be reliable, observable, recoverable, and battery-conscious.
+
+Implement the system as real software, and verify its behavior through tests.

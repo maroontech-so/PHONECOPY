@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: phonebridge
+      POSTGRES_USER: ${DATABASE_USER:-phonebridge}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in secrets/env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-phonebridge} -d phonebridge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  relay:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PHONEBRIDGE_ENV: ${PHONEBRIDGE_ENV:-production}
+      PORT: "8443"
+      DATABASE_URL: jdbc:postgresql://postgres:5432/phonebridge
+      DATABASE_USER: ${DATABASE_USER:-phonebridge}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in secrets/env}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      MAX_WS_PER_DEVICE: ${MAX_WS_PER_DEVICE:-2}
+      CREDENTIAL_TTL_DAYS: ${CREDENTIAL_TTL_DAYS:-90}
+    expose:
+      - "8443"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
